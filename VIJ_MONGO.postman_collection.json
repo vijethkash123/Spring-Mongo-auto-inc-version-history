@@ -1,0 +1,643 @@
+{
+  "info": {
+    "name": "VIJ_MONGO",
+    "_postman_id": "vij-mongo-collection-001",
+    "description": "Test collection for the Spring Boot + MongoDB application.\n\nIncludes:\n- Student API  (auto-increment Long ID via `counters` collection)\n- StudentVij API (append-only versioning per entityId)\n- ConfigAdmin API (append-only versioning per appName+key)\n\nBase URL: http://localhost:8080",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "entityId",
+      "value": "stu-001",
+      "type": "string"
+    },
+    {
+      "key": "studentId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "appName",
+      "value": "payments",
+      "type": "string"
+    },
+    {
+      "key": "configKey",
+      "value": "db.url",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Student API",
+      "description": "CRUD endpoints for the Student collection. IDs are auto-incremented Longs.",
+      "item": [
+        {
+          "name": "GET all students",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/students",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "students"]
+            },
+            "description": "Returns all student documents."
+          },
+          "response": []
+        },
+        {
+          "name": "GET student by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/students/{{studentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "students", "{{studentId}}"]
+            },
+            "description": "Returns a single student by its auto-incremented Long ID.\nUpdate the `studentId` variable to the ID returned by the POST."
+          },
+          "response": []
+        },
+        {
+          "name": "POST create student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('studentId', json.id);",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('ID is a number', () => pm.expect(typeof json.id).to.equal('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"email\": \"jane.doe@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/students",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "students"]
+            },
+            "description": "Creates a new student.\nThe `studentId` collection variable is automatically set from the response ID for use in subsequent requests."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT update student",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Smith\",\n  \"email\": \"jane.smith@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/students/{{studentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "students", "{{studentId}}"]
+            },
+            "description": "Updates an existing student in-place. Uses the `studentId` variable set by the POST request."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE student",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/students/{{studentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "students", "{{studentId}}"]
+            },
+            "description": "Deletes a student by ID. Returns 204 No Content on success, 404 if not found."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "StudentVij API — Append-Only Versioning",
+      "description": "Versioned student documents. Every write INSERTS a new document with an incremented version — existing docs are never modified.\n\nVersions are scoped per entityId (1, 2, 3 …).",
+      "item": [
+        {
+          "name": "POST create version 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('entityId', json.entityId);",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Version is 1', () => pm.expect(json.version).to.equal(1));",
+                  "pm.test('entityId set', () => pm.expect(json.entityId).to.equal(pm.collectionVariables.get('entityId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/studentvij/{{entityId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["studentvij", "{{entityId}}"]
+            },
+            "description": "Inserts the first version (v1) of a student for the given entityId.\nRun this first — it initialises the counter at 1."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH append version 2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Version incremented', () => pm.expect(json.version).to.equal(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Updated\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/studentvij/{{entityId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["studentvij", "{{entityId}}"]
+            },
+            "description": "Appends version 2 for the same entityId. The original v1 document remains untouched in MongoDB."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH append version 3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Version incremented to 3', () => pm.expect(json.version).to.equal(3));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Final\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/studentvij/{{entityId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["studentvij", "{{entityId}}"]
+            },
+            "description": "Appends a third version. Now the collection has 3 immutable documents for this entityId."
+          },
+          "response": []
+        },
+        {
+          "name": "GET latest version",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns latest version', () => pm.expect(json.version).to.be.above(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/studentvij/{{entityId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["studentvij", "{{entityId}}"]
+            },
+            "description": "Returns only the most recent version document for the given entityId."
+          },
+          "response": []
+        },
+        {
+          "name": "GET full version history",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('History is an array', () => pm.expect(json).to.be.an('array'));",
+                  "pm.test('Versions are ordered ascending', () => {",
+                  "  for (var i = 1; i < json.length; i++) {",
+                  "    pm.expect(json[i].version).to.be.above(json[i-1].version);",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/studentvij/{{entityId}}/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["studentvij", "{{entityId}}", "history"]
+            },
+            "description": "Returns all versions for this entityId in ascending order (v1, v2, v3 …). Demonstrates the append-only audit trail."
+          },
+          "response": []
+        },
+        {
+          "name": "GET non-existent entityId (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/studentvij/does-not-exist",
+              "host": ["{{baseUrl}}"],
+              "path": ["studentvij", "does-not-exist"]
+            },
+            "description": "Expected to return 404 when the entityId has never been created."
+          },
+          "response": []
+        },
+        {
+          "name": "POST second entityId (parallel versioning)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Separate entity starts at v1', () => pm.expect(json.version).to.equal(1));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bob\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/studentvij/stu-002",
+              "host": ["{{baseUrl}}"],
+              "path": ["studentvij", "stu-002"]
+            },
+            "description": "Creates a completely separate entityId `stu-002`. Its version counter starts at 1 independently of `stu-001`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "ConfigAdmin API — Append-Only Config Versioning",
+      "description": "Versioned configuration store.\n\nUniqueness: (appName + key) identifies one logical config entry.\nEvery write INSERTS a new document with an incremented version scoped to that (appName, key) pair.\n\nExamples used:\n- appName=payments, key=db.url\n- appName=payments, key=timeout.ms\n- appName=inventory, key=db.url  ← same key, different app, independent counter",
+      "item": [
+        {
+          "name": "POST create config v1 (payments / db.url)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Version is 1', () => pm.expect(json.version).to.equal(1));",
+                  "pm.test('appName matches', () => pm.expect(json.appName).to.equal('payments'));",
+                  "pm.test('key matches', () => pm.expect(json.key).to.equal('db.url'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": \"mongodb://db1.internal:27017/payments\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/{{appName}}/{{configKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "{{appName}}", "{{configKey}}"]
+            },
+            "description": "Creates v1 for the (payments, db.url) config entry."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH update config v2 (payments / db.url)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Version is 2', () => pm.expect(json.version).to.equal(2));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": \"mongodb://db2.internal:27017/payments\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/{{appName}}/{{configKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "{{appName}}", "{{configKey}}"]
+            },
+            "description": "Appends v2 for (payments, db.url). The v1 document remains unchanged in MongoDB."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH update config v3 (payments / db.url)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Version is 3', () => pm.expect(json.version).to.equal(3));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": \"mongodb://db3.internal:27017/payments\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/{{appName}}/{{configKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "{{appName}}", "{{configKey}}"]
+            },
+            "description": "Appends v3 for (payments, db.url)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET latest config (payments / db.url)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns a document', () => pm.expect(json).to.be.an('object'));",
+                  "pm.test('Version is highest', () => pm.expect(json.version).to.be.above(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/{{appName}}/{{configKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "{{appName}}", "{{configKey}}"]
+            },
+            "description": "Returns only the most recent version of (payments, db.url)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET full history (payments / db.url)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('History is an array', () => pm.expect(json).to.be.an('array'));",
+                  "pm.test('Versions ordered ascending', () => {",
+                  "  for (var i = 1; i < json.length; i++) {",
+                  "    pm.expect(json[i].version).to.be.above(json[i-1].version);",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/{{appName}}/{{configKey}}/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "{{appName}}", "{{configKey}}", "history"]
+            },
+            "description": "Returns all versions (v1, v2, v3) for (payments, db.url) in ascending order."
+          },
+          "response": []
+        },
+        {
+          "name": "POST different key, same app (payments / timeout.ms)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Independent counter starts at 1', () => pm.expect(json.version).to.equal(1));",
+                  "pm.test('Key is timeout.ms', () => pm.expect(json.key).to.equal('timeout.ms'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": \"5000\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/payments/timeout.ms",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "payments", "timeout.ms"]
+            },
+            "description": "Same appName (payments) but a different key (timeout.ms). The version counter for this key is independent — starts at 1."
+          },
+          "response": []
+        },
+        {
+          "name": "POST same key, different app (inventory / db.url)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Independent counter starts at 1', () => pm.expect(json.version).to.equal(1));",
+                  "pm.test('appName is inventory', () => pm.expect(json.appName).to.equal('inventory'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": \"mongodb://db1.internal:27017/inventory\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/inventory/db.url",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "inventory", "db.url"]
+            },
+            "description": "Same key (db.url) but different appName (inventory). Its version counter is also independent — starts at 1."
+          },
+          "response": []
+        },
+        {
+          "name": "GET all keys for appName (payments)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array of latest per key', () => pm.expect(json).to.be.an('array'));",
+                  "pm.test('All entries belong to payments', () => {",
+                  "  json.forEach(e => pm.expect(e.appName).to.equal('payments'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "payments"]
+            },
+            "description": "Returns the LATEST version of every key that belongs to the 'payments' app.\nGives a full current config snapshot for the application."
+          },
+          "response": []
+        },
+        {
+          "name": "GET non-existent config (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/configadmin/ghost-app/missing-key",
+              "host": ["{{baseUrl}}"],
+              "path": ["configadmin", "ghost-app", "missing-key"]
+            },
+            "description": "Expected 404 for an (appName, key) that has never been created."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
