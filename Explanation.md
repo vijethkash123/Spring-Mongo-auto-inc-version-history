@@ -311,3 +311,132 @@ db.configadmin.updateMany(
 ```
 
 `{ version: null }` in a MongoDB query matches **both** documents where `version` is explicitly `null` **and** documents where `version` doesn't exist at all — so one query handles both cases.
+
+
+Let me walk through the script piece by piece, then assess gaps for your specific scenario.
+
+---
+
+### What the script does — step by step
+
+```javascript
+// STEP 1: Scan every existing doc in configadmin
+//         Group by (appName, key), find the highest version in each group
+db.configadmin.aggregate([
+  {
+    $group: {
+      _id: { appName: "$appName", key: "$key" },
+      maxVersion: { $max: "$version" }   // null if field is absent on all docs in group
+    }
+  }
+])
+```
+
+For your scenario (no version column in source system), every group returns `maxVersion: null`.
+
+---
+
+```javascript
+.forEach(entry => {
+  const counterId = `configadmin::${entry._id.appName}::${entry._id.key}`;
+  const maxVer = entry.maxVersion ?? 1;   // null → 1
+```
+
+`??` is nullish coalescing — if `maxVersion` came back as `null`, treat it as `1`.
+
+---
+
+```javascript
+  // STEP 2: Create the counter document — only if it doesn't already exist
+  db.counters.updateOne(
+    { _id: counterId },
+    { $setOnInsert: { seqValue: maxVer } },   // ← key part
+    { upsert: true }
+  );
+```
+
+`$setOnInsert` is the critical piece. It only writes `seqValue` **when the document is being created for the first time** (the "insert" side of upsert). If a counter already exists — e.g., from someone already calling the API — it is **left completely untouched**. This is intentional and safe.
+
+---
+
+```javascript
+  // STEP 3: Backfill version=1 onto the migrated docs that had no version field
+  if (entry.maxVersion == null) {
+    db.configadmin.updateMany(
+      { appName: entry._id.appName, key: entry._id.key, version: null },
+      { $set: { version: 1 } }
+    );
+  }
+});
+```
+
+This updates all docs for that `(appName, key)` where `version` is absent or null → sets it to `1`. After this, the collection is consistent — every doc has a real version number.
+
+---
+
+### After migration, the state is:
+
+```
+counters collection:
+{ _id: "configadmin::payments::db.url", seqValue: 1 }
+
+configadmin collection:
+{ appName: "payments", key: "db.url", data: "...", version: 1 }
+```
+
+Next API `PATCH` call → `$inc seqValue → 2` → inserts `version: 2` ✔
+
+---
+
+### Is it enough for your scenario?
+
+**Your scenario:** source system has unique `(appName, key)`, no version column, migrating into a fresh/empty `configadmin` collection.
+
+✅ **Yes, the script is sufficient** for this case. Every pair has exactly one migrated doc, it gets `version = 1`, the counter is seeded to `seqValue = 1`, and subsequent API writes continue from `2` onwards.
+
+---
+
+### Where it would break (scenarios NOT in your description)
+
+| Situation | Problem |
+|-----------|---------|
+| App was already receiving API traffic for `payments/db.url` (version 1, 2 exist) AND you're migrating in a new row for the same pair | Counter stays at 2 (correct), but the migrated row gets `version = 1` → **unique index collision** 💥 |
+| Source system had multiple rows for same `(appName, key)` with different versions already | `$max` would catch the highest, counter seeded correctly, but you'd need to NOT backfill those — they already have version numbers |
+
+Since your source system has **unique `(appName, key)`** with **no version column** and `configadmin` is **new/empty**, neither of these applies. The script is correct as-is.
+
+---
+
+### One practical caution
+
+Run the script **with the Spring Boot app stopped** (or before first deploy). If the app is live and the script hasn't finished seeding counters, a concurrent `PATCH` could race in, create the counter at `seqValue = 1`, and then the script's `$setOnInsert` would silently no-op — leaving the migrated doc un-backfilled at `version = null`. No data loss, but you'd have an inconsistent doc that needs manual cleanup.
+
+
+
+// Run in mongosh after migrating existing rows into configadmin
+
+db.configadmin.aggregate([
+  {
+    $group: {
+      _id: { appName: "$appName", key: "$key" },
+      maxVersion: { $max: "$version" }
+    }
+  }
+]).forEach(entry => {
+  const counterId = `configadmin::${entry._id.appName}::${entry._id.key}`;
+  const maxVer = entry.maxVersion ?? 1;  // if version was null, treat as 1
+
+  db.counters.updateOne(
+    { _id: counterId },
+    { $setOnInsert: { seqValue: maxVer } },
+    { upsert: true }
+  );
+
+  // Also backfill version=1 on docs that were migrated without a version
+  if (entry.maxVersion == null) {
+    db.configadmin.updateMany(
+      { appName: entry._id.appName, key: entry._id.key, version: null },
+      { $set: { version: 1 } }
+    );
+  }
+});
